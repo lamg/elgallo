@@ -9,7 +9,20 @@ and [<RequireQualifiedAccess>] TypeExpr =
   | Func of TypeExpr * TypeExpr // nat -> nat
   | SimpleParams of string * TypeParams list // T (n m : nat) (j k: nat)
 
+type Guard = Guard of Pattern * Expr
+
+
+and [<RequireQualifiedAccess>] Pattern =
+  | All
+  | Identifier of string
+
+and [<RequireQualifiedAccess>] Expr =
+  | Match of vars: string list * guards: Guard list
+  | Identifier of string
+  | Binary
+
 type AST =
+  | Definition of name: string * funcParams: TypeParams list * resultType: TypeExpr option * body: Expr
   | Fixpoint
   | Inductive of newType: TypeExpr * baseType: TypeExpr * cases: TypeExpr list
   | Module
@@ -32,9 +45,8 @@ let identifier: Parser<string, unit> =
 
 let pint: Parser<int, unit> = pint32 .>> ws
 
-let typeExpr =
-  let expr, exprRef = createParserForwardedToRef ()
 
+let typeParams expr =
   let idsColon =
     parse {
       let! ids = many1 identifier
@@ -43,8 +55,10 @@ let typeExpr =
       return TypeParams(ids, e)
     }
 
+  between (token "(") (token ")") idsColon
 
-  let typeParams = between (token "(") (token ")") idsColon
+let typeExpr =
+  let expr, exprRef = createParserForwardedToRef ()
 
   exprRef.Value <-
     parse {
@@ -55,7 +69,7 @@ let typeExpr =
         match arrow with
         | None ->
           parse {
-            let! ts = many typeParams
+            let! ts = many (typeParams expr)
 
             return
               match ts with
@@ -90,4 +104,40 @@ let requireImport =
     let! xs = sepEndBy1 identifier (pstring ".")
     do! ws
     return RequireImport xs
+  }
+
+let expression =
+  let expr, exprRef = createParserForwardedToRef ()
+
+  let guard =
+    parse {
+      let! pattern = token "_" >>. preturn Pattern.All <|> (identifier |>> Pattern.Identifier)
+      do! token "=>"
+      let! e = expr
+      return Guard(pattern, e)
+    }
+
+  exprRef.Value <-
+    parse {
+      do! kw "match"
+      let! vars = sepBy1 identifier (token ",")
+      do! kw "with"
+      let! guards = many1 (token "|" >>. guard)
+      do! kw "end"
+      return Expr.Match(vars, guards)
+    }
+    <|> (identifier |>> Expr.Identifier)
+
+  expr
+
+let definition =
+  parse {
+    do! kw "Definition"
+    let! name = identifier
+    let! funcParams = many (typeParams typeExpr)
+    let! resultType = opt (token ":" >>. typeExpr)
+    do! token ":="
+    let! e = expression
+    do! token "."
+    return Definition(name, funcParams, resultType, e)
   }

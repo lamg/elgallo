@@ -94,3 +94,33 @@ let ``require import`` () =
   let expected = RequireImport [ "Coq"; "Init"; "Nat" ]
 
   Assert.Equal<AST>(expected, actual)
+
+[<Fact>]
+let ``definition orb`` () =
+  let text =
+    "
+Definition orb (x: bool) (y: bool): bool :=
+  match x with
+  | true => true
+  | false => y
+  end.
+  "
+
+  let actual = parseWith definition text
+
+  let expectedMatch =
+    Expr.Match(
+      [ "x" ],
+      [ Guard(Pattern.Identifier "true", Expr.Identifier "true")
+        Guard(Pattern.Identifier "false", Expr.Identifier "y") ]
+    )
+
+  let expected =
+    Definition(
+      "orb",
+      [ typeParams [ "x" ] "bool"; typeParams [ "y" ] "bool" ],
+      Some(TypeExpr.Simple "bool"),
+      expectedMatch
+    )
+
+  Assert.Equal<AST>(expected, actual)
