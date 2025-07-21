@@ -5,10 +5,16 @@ open Xunit
 open FParsec
 open RocqParser
 
-let parseInductive text =
-  match run (ws >>. inductiveType) text with
+
+let parseWith parser text =
+  match run (ws >>. parser) text with
   | Success(r, _, _) -> r
   | Failure(msg, _, _) -> failwith msg
+
+
+let parseInductive text = parseWith inductiveType text
+
+let parseRequireImport text = parseWith requireImport text
 
 let typeParams names t =
   TypeParams.TypeParams(names, TypeExpr.Simple t)
@@ -78,5 +84,13 @@ let ``inductive with function`` () =
             "gogo"
             [ TypeParams.TypeParams([ "f" ], TypeExpr.Func(TypeExpr.Simple "nat", TypeExpr.Simple "nat")) ] ]
     )
+
+  Assert.Equal<AST>(expected, actual)
+
+[<Fact>]
+let ``require import`` () =
+  let text = "Require Import Coq.Init.Nat."
+  let actual = parseRequireImport text
+  let expected = RequireImport [ "Coq"; "Init"; "Nat" ]
 
   Assert.Equal<AST>(expected, actual)

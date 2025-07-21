@@ -13,6 +13,7 @@ type AST =
   | Fixpoint
   | Inductive of newType: TypeExpr * baseType: TypeExpr * cases: TypeExpr list
   | Module
+  | RequireImport of longIdent: string list
 
 // tokenize
 
@@ -78,5 +79,15 @@ let inductiveType =
     let! baseType = typeExpr
     do! token ":="
     let! cases = many1 (token "|" >>. typeExpr)
+    do! token "."
     return Inductive(newType, baseType, cases)
+  }
+
+let requireImport =
+  parse {
+    do! kw "Require"
+    do! kw "Import"
+    let! xs = sepEndBy1 identifier (pstring ".")
+    do! ws
+    return RequireImport xs
   }
