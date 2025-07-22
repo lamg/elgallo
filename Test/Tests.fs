@@ -223,3 +223,13 @@ Proof. simpl. reflexivity. Qed."
     )
 
   Assert.Equal<AST>(expected, actual)
+
+[<Fact>]
+let ``notation`` () =
+  let text = """Notation "x && y" := (andb x y)."""
+  let actual = parseWith (notation Map.empty) text
+
+  let expected =
+    Notation("x && y", Expr.Apply(Expr.Apply(Expr.Identifier "andb", Expr.Identifier "x"), Expr.Identifier "y"))
+
+  Assert.Equal<AST>(expected, actual)

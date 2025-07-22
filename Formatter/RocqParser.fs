@@ -58,6 +58,7 @@ type AST =
   | Module
   | RequireImport of longIdent: string list
   | Example of name: string * expression: Expr * proof: Proof
+  | Notation of string: string * expression: Expr
 
 // tokenize
 
@@ -77,13 +78,15 @@ let identifier: Parser<string, unit> =
   attempt (
     parse {
       let! i = many1Satisfy2L isIdStart isIdChar "identifier"
+      let! apostrophes = many (pchar '\'') |>> System.String.Concat
+      let id = i + apostrophes
       do! ws
 
       return!
-        if keywords.Contains i then
-          fail $"keyword {i} not a valid identifier"
+        if keywords.Contains id then
+          fail $"keyword {id} not a valid identifier"
         else
-          preturn i
+          preturn id
     }
   )
 
@@ -292,4 +295,30 @@ let example operators =
     do! token "."
     let! p = proof
     return Example(id, e, p)
+  }
+
+let rocqString =
+  let str s = pstring s
+  let normalCharSnippet = manySatisfy (fun c -> c <> '\\' && c <> '"')
+
+  let escapedChar =
+    str "\\"
+    >>. (anyOf "\\\"nrt"
+         |>> function
+           | 'n' -> "\n"
+           | 'r' -> "\r"
+           | 't' -> "\t"
+           | c -> string c)
+
+  between (str "\"") (str "\"") (stringsSepBy normalCharSnippet escapedChar)
+  .>> ws
+
+let notation operators =
+  parse {
+    do! kw "Notation"
+    let! notationString = rocqString
+    do! token ":="
+    let! e = expression operators
+    do! token "."
+    return Notation(notationString, e)
   }
