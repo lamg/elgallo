@@ -195,3 +195,31 @@ let ``various patterns`` () =
   |> List.iter (fun (text, expected) ->
     let actual = parseWith constructorPattern text
     Assert.Equal<Pattern>(expected, actual))
+
+[<Fact>]
+let ``example parsing`` () =
+  let text =
+    "
+Example test_next_working_day:
+  (next_working_day (next_working_day saturday)) = tuesday.
+Proof. simpl. reflexivity. Qed."
+
+  let equal = Operator.Operator("=", 40)
+  let operators = [ "=", equal ] |> Map.ofSeq
+  let actual = parseWith (example operators) text
+
+  let expected =
+    Example(
+      "test_next_working_day",
+      Expr.Binary(
+        equal,
+        Expr.Apply(
+          Expr.Identifier "next_working_day",
+          Expr.Apply(Expr.Identifier "next_working_day", Expr.Identifier "saturday")
+        ),
+        Expr.Identifier "tuesday"
+      ),
+      Proof.TacticsQed [ Tactic.Simple "simpl"; Tactic.Simple "reflexivity" ]
+    )
+
+  Assert.Equal<AST>(expected, actual)

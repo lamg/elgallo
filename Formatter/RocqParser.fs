@@ -26,12 +26,38 @@ and [<RequireQualifiedAccess>] Expr =
   | Binary of operator: Operator * left: Expr * right: Expr
   | IfThenElse of cond: Expr * thenExpr: Expr * elseExpr: Expr
 
+[<RequireQualifiedAccess>]
+type Level =
+  | Plus
+  | Minus
+  | Asterisk
+
+[<RequireQualifiedAccess>]
+type Direction =
+  | Left
+  | Right
+
+[<RequireQualifiedAccess>]
+type Tactic =
+  | Simple of string
+  | Level of Level * depth: int * Tactic
+  | Rewrite of Direction option * Tactic
+
+
+[<RequireQualifiedAccess>]
+type Proof =
+  | TacticsQed of Tactic list
+  | TacticsAdmitted of Tactic list
+  | Tactics of Tactic list
+  | Empty
+
 type AST =
   | Definition of name: string * funcParams: TypeParams list * resultType: TypeExpr option * body: Expr
   | Fixpoint
   | Inductive of newType: TypeExpr * baseType: TypeExpr * cases: TypeExpr list
   | Module
   | RequireImport of longIdent: string list
+  | Example of name: string * expression: Expr * proof: Proof
 
 // tokenize
 
@@ -205,4 +231,65 @@ let definition operators =
     let! e = expression operators
     do! token "."
     return Definition(name, funcParams, resultType, e)
+  }
+
+let kwStatement s = kw s .>> token "."
+
+let rewriteTactic =
+  parse {
+    do! kw "rewrite"
+
+    let! rewriteDirection =
+      opt (
+        token "<-" >>. preturn Direction.Right
+        <|> (token "->" >>. preturn Direction.Left)
+      )
+
+    let! rewriteWith = identifier
+    return Tactic.Rewrite(rewriteDirection, Tactic.Simple rewriteWith)
+  }
+
+let tactic =
+  parse {
+    let! level = many (str "-") <|> many (str "+") <|> many (str "*")
+    let! innerTactic = rewriteTactic <|> (identifier .>> token "." |>> Tactic.Simple)
+
+    return!
+      match level with
+      | [] -> preturn innerTactic
+      | "-" :: _ -> preturn (Tactic.Level(Level.Minus, level.Length, innerTactic))
+      | "+" :: _ -> preturn (Tactic.Level(Level.Plus, level.Length, innerTactic))
+      | "*" :: _ -> preturn (Tactic.Level(Level.Minus, level.Length, innerTactic))
+      | _ -> fail $"unrecognized level pattern {level}"
+  }
+
+let splitLast xs =
+  match List.rev xs with
+  | [] -> failwith "splitLast does not accept empty lists"
+  | y :: ys -> y, List.rev ys
+
+let proof =
+  parse {
+    do! kwStatement "Proof"
+    let! tactics = many tactic
+
+    return
+      match tactics with
+      | [] -> Proof.Empty
+      | _ ->
+        match splitLast tactics with
+        | Tactic.Simple "Qed", xs -> Proof.TacticsQed xs
+        | Tactic.Simple "Admitted", xs -> Proof.TacticsAdmitted xs
+        | _ -> Proof.Tactics tactics
+  }
+
+let example operators =
+  parse {
+    do! kw "Example"
+    let! id = identifier
+    do! token ":"
+    let! e = expression operators
+    do! token "."
+    let! p = proof
+    return Example(id, e, p)
   }
