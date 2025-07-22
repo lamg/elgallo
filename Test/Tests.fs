@@ -149,3 +149,49 @@ let ``function call`` () =
   let expected = Expr.Apply(Expr.Identifier "f", Expr.Identifier "x")
 
   Assert.Equal<Expr>(expected, actual)
+
+[<Fact>]
+let ``match f x`` () =
+  let text =
+    "
+match f x with
+| Coq y => false
+| Rocq z => true
+end
+  "
+
+  let actual = parseWith (expression Map.empty) text
+
+  let expected =
+    Expr.Match(
+      [ Expr.Apply(Expr.Identifier "f", Expr.Identifier "x") ],
+      [ Guard(
+          Pattern.Mixed[Pattern.Identifier "Coq"
+                        Pattern.Identifier "y"],
+          Expr.Identifier "false"
+        )
+        Guard(
+          Pattern.Mixed[Pattern.Identifier "Rocq"
+                        Pattern.Identifier "z"],
+          Expr.Identifier "true"
+        ) ]
+    )
+
+  Assert.Equal<Expr>(expected, actual)
+
+[<Fact>]
+let ``various patterns`` () =
+  [ "Coq x y", Pattern.Mixed [ Pattern.Identifier "Coq"; Pattern.Identifier "x"; Pattern.Identifier "y" ]
+    "Coq _ _",
+    Pattern.Mixed[Pattern.Identifier "Coq"
+                  Pattern.All
+                  Pattern.All]
+    "Coq _, Rocq _",
+    Pattern.CommaSep
+      [ Pattern.Mixed[Pattern.Identifier "Coq"
+                      Pattern.All]
+        Pattern.Mixed[Pattern.Identifier "Rocq"
+                      Pattern.All] ] ]
+  |> List.iter (fun (text, expected) ->
+    let actual = parseWith constructorPattern text
+    Assert.Equal<Pattern>(expected, actual))

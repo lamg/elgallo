@@ -16,6 +16,8 @@ type Guard = Guard of Pattern * Expr
 and [<RequireQualifiedAccess>] Pattern =
   | All
   | Identifier of string
+  | Mixed of Pattern list
+  | CommaSep of Pattern list
 
 and [<RequireQualifiedAccess>] Expr =
   | Match of exprs: Expr list * guards: Guard list
@@ -125,6 +127,24 @@ let requireImport =
 
 let identifierExpr = identifier |>> Expr.Identifier
 
+
+let constructorPattern =
+  let simple =
+    identifier |>> Pattern.Identifier <|> (token "_" |>> fun _ -> Pattern.All)
+
+  let mixed = many1 simple
+  let commaSep = sepBy mixed (token ",")
+
+  parse {
+    let! xss = commaSep
+
+    return
+      match xss with
+      | [ [ x ] ] -> x
+      | [ xs ] -> Pattern.Mixed xs
+      | _ -> xss |> List.map Pattern.Mixed |> Pattern.CommaSep
+  }
+
 let expression (operators: Map<string, Operator>) =
   let expr, exprRef = createParserForwardedToRef ()
 
@@ -141,7 +161,7 @@ let expression (operators: Map<string, Operator>) =
 
   let guard =
     parse {
-      let! pattern = token "_" >>. preturn Pattern.All <|> (identifier |>> Pattern.Identifier)
+      let! pattern = constructorPattern
       do! token "=>"
       let! e = expr
       return Guard(pattern, e)
