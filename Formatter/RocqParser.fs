@@ -19,7 +19,8 @@ and [<RequireQualifiedAccess>] Pattern =
 and [<RequireQualifiedAccess>] Expr =
   | Match of vars: string list * guards: Guard list
   | Identifier of string
-  | Binary
+  | Binary of symbol: string * left: Expr * right: Expr
+  | IfThenElse of cond: Expr * thenExpr: Expr * elseExpr: Expr
 
 type AST =
   | Definition of name: string * funcParams: TypeParams list * resultType: TypeExpr option * body: Expr
@@ -117,7 +118,7 @@ let expression =
       return Guard(pattern, e)
     }
 
-  exprRef.Value <-
+  let matchExpr =
     parse {
       do! kw "match"
       let! vars = sepBy1 identifier (token ",")
@@ -126,7 +127,10 @@ let expression =
       do! kw "end"
       return Expr.Match(vars, guards)
     }
-    <|> (identifier |>> Expr.Identifier)
+
+  let identifierExpr = identifier |>> Expr.Identifier
+
+  exprRef.Value <- matchExpr <|> identifierExpr
 
   expr
 

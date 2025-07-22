@@ -51,8 +51,7 @@ let ``inductive color`` () =
     "
 Inductive color: Type :=
 | bw (b: black_white)
-| primary (p: rgb).
-"
+| primary (p: rgb)."
 
   let actual = parseInductive text
 
@@ -70,8 +69,7 @@ let ``inductive with function`` () =
   let text =
     "
   Inductive bla : Type :=
-  | gogo (f: nat -> nat).
-"
+  | gogo (f: nat -> nat)."
 
   let actual = parseInductive text
 
