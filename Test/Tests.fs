@@ -104,7 +104,7 @@ Definition orb (x: bool) (y: bool): bool :=
   end.
   "
 
-  let actual = parseWith definition text
+  let actual = parseWith (definition Map.empty) text
 
   let expectedMatch =
     Expr.Match(
@@ -131,3 +131,13 @@ let ``comment parsing`` () =
   let expected = RequireImport [ "Coq"; "Init"; "Nat" ]
 
   Assert.Equal<AST>(expected, actual)
+
+
+[<Fact>]
+let ``binary expression`` () =
+  let text = "a + b"
+  let plus = Operator("+", 70)
+  let operators = [ "+", plus ] |> Map.ofSeq
+  let actual = parseWith (expression operators) text
+  let expected = Expr.Binary(plus, Expr.Identifier "a", Expr.Identifier "b")
+  Assert.Equal<Expr>(expected, actual)

@@ -9,8 +9,9 @@ and [<RequireQualifiedAccess>] TypeExpr =
   | Func of TypeExpr * TypeExpr // nat -> nat
   | SimpleParams of string * TypeParams list // T (n m : nat) (j k: nat)
 
-type Guard = Guard of Pattern * Expr
+type Operator = Operator of symbol: string * precedence: int
 
+type Guard = Guard of Pattern * Expr
 
 and [<RequireQualifiedAccess>] Pattern =
   | All
@@ -19,7 +20,7 @@ and [<RequireQualifiedAccess>] Pattern =
 and [<RequireQualifiedAccess>] Expr =
   | Match of vars: string list * guards: Guard list
   | Identifier of string
-  | Binary of symbol: string * left: Expr * right: Expr
+  | Binary of operator: Operator * left: Expr * right: Expr
   | IfThenElse of cond: Expr * thenExpr: Expr * elseExpr: Expr
 
 type AST =
@@ -46,6 +47,7 @@ let identifier: Parser<string, unit> =
 
 let pint: Parser<int, unit> = pint32 .>> ws
 
+let betweenParens p = between (token "(") (token ")") p
 
 let typeParams expr =
   let idsColon =
@@ -56,7 +58,7 @@ let typeParams expr =
       return TypeParams(ids, e)
     }
 
-  between (token "(") (token ")") idsColon
+  betweenParens idsColon
 
 let typeExpr =
   let expr, exprRef = createParserForwardedToRef ()
@@ -107,7 +109,7 @@ let requireImport =
     return RequireImport xs
   }
 
-let expression =
+let expression (operators: Map<string, Operator>) =
   let expr, exprRef = createParserForwardedToRef ()
 
   let guard =
@@ -130,18 +132,32 @@ let expression =
 
   let identifierExpr = identifier |>> Expr.Identifier
 
-  exprRef.Value <- matchExpr <|> identifierExpr
+  let binaryTail left =
+    parse {
+      let! op = operators |> Map.toSeq |> Seq.map (fst >> str) |> choice
+      let! right = expr
+      return Expr.Binary(operators[op], left, right)
+    }
+
+  let term =
+    parse {
+      let! t = identifierExpr <|> betweenParens expr
+      let! r = binaryTail t <|> preturn t
+      return r
+    }
+
+  exprRef.Value <- matchExpr <|> term
 
   expr
 
-let definition =
+let definition operators =
   parse {
     do! kw "Definition"
     let! name = identifier
     let! funcParams = many (typeParams typeExpr)
     let! resultType = opt (token ":" >>. typeExpr)
     do! token ":="
-    let! e = expression
+    let! e = expression operators
     do! token "."
     return Definition(name, funcParams, resultType, e)
   }
