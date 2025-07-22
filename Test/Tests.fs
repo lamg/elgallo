@@ -108,7 +108,7 @@ Definition orb (x: bool) (y: bool): bool :=
 
   let expectedMatch =
     Expr.Match(
-      [ "x" ],
+      [ Expr.Identifier "x" ],
       [ Guard(Pattern.Identifier "true", Expr.Identifier "true")
         Guard(Pattern.Identifier "false", Expr.Identifier "y") ]
     )
@@ -140,4 +140,12 @@ let ``binary expression`` () =
   let operators = [ "+", plus ] |> Map.ofSeq
   let actual = parseWith (expression operators) text
   let expected = Expr.Binary(plus, Expr.Identifier "a", Expr.Identifier "b")
+  Assert.Equal<Expr>(expected, actual)
+
+[<Fact>]
+let ``function call`` () =
+  let text = "f x"
+  let actual = parseWith (expression Map.empty) text
+  let expected = Expr.Apply(Expr.Identifier "f", Expr.Identifier "x")
+
   Assert.Equal<Expr>(expected, actual)

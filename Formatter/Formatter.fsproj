@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="FParsec" />
+    <PackageReference Include="FSharp.Core" />
   </ItemGroup>
 
 </Project>

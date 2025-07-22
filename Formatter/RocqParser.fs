@@ -18,8 +18,9 @@ and [<RequireQualifiedAccess>] Pattern =
   | Identifier of string
 
 and [<RequireQualifiedAccess>] Expr =
-  | Match of vars: string list * guards: Guard list
+  | Match of exprs: Expr list * guards: Guard list
   | Identifier of string
+  | Apply of f: Expr * x: Expr
   | Binary of operator: Operator * left: Expr * right: Expr
   | IfThenElse of cond: Expr * thenExpr: Expr * elseExpr: Expr
 
@@ -43,7 +44,20 @@ let kw s =
 let identifier: Parser<string, unit> =
   let isIdStart c = isLetter c
   let isIdChar c = isLetter c || isDigit c || c = '_'
-  many1Satisfy2L isIdStart isIdChar "identifier" .>> ws
+  let keywords = set [ "match"; "end"; "with" ]
+
+  attempt (
+    parse {
+      let! i = many1Satisfy2L isIdStart isIdChar "identifier"
+      do! ws
+
+      return!
+        if keywords.Contains i then
+          fail $"keyword {i} not a valid identifier"
+        else
+          preturn i
+    }
+  )
 
 let pint: Parser<int, unit> = pint32 .>> ws
 
@@ -109,8 +123,21 @@ let requireImport =
     return RequireImport xs
   }
 
+let identifierExpr = identifier |>> Expr.Identifier
+
 let expression (operators: Map<string, Operator>) =
   let expr, exprRef = createParserForwardedToRef ()
+
+  let factor =
+    parse {
+      let! xs = many1 (identifierExpr <|> betweenParens expr)
+
+      return
+        match xs with
+        | [] -> failwith "factor should have parsed at least an element"
+        | [ x ] -> x
+        | y :: ys -> ys |> List.fold (fun acc y -> Expr.Apply(acc, y)) y
+    }
 
   let guard =
     parse {
@@ -123,14 +150,12 @@ let expression (operators: Map<string, Operator>) =
   let matchExpr =
     parse {
       do! kw "match"
-      let! vars = sepBy1 identifier (token ",")
+      let! exprs = sepBy1 expr (token ",")
       do! kw "with"
       let! guards = many1 (token "|" >>. guard)
       do! kw "end"
-      return Expr.Match(vars, guards)
+      return Expr.Match(exprs, guards)
     }
-
-  let identifierExpr = identifier |>> Expr.Identifier
 
   let binaryTail left =
     parse {
@@ -141,7 +166,7 @@ let expression (operators: Map<string, Operator>) =
 
   let term =
     parse {
-      let! t = identifierExpr <|> betweenParens expr
+      let! t = factor
       let! r = binaryTail t <|> preturn t
       return r
     }
