@@ -122,3 +122,12 @@ Definition orb (x: bool) (y: bool): bool :=
     )
 
   Assert.Equal<AST>(expected, actual)
+
+
+[<Fact>]
+let ``comment parsing`` () =
+  let text = "(* hello world *) Require Import Coq.Init.Nat."
+  let actual = parseRequireImport text
+  let expected = RequireImport [ "Coq"; "Init"; "Nat" ]
+
+  Assert.Equal<AST>(expected, actual)
