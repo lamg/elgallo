@@ -248,3 +248,12 @@ let notation () =
   |> List.iter (fun (text, expected) ->
     let actual = parseWith (notation Map.empty) text
     Assert.Equal<Notation>(expected, actual))
+
+[<Fact>]
+let tactics () =
+  [ "destruct n as [|n'] eqn:E", Tactic.Destruct("destruct", "n", Some [ "n'" ], Some "E")
+    "destruct b eqn:E", Tactic.Destruct("destruct", "b", None, Some "E")
+    "induction n as [|n' ind]", Tactic.Destruct("induction", "n", Some [ "n'"; "ind" ], None) ]
+  |> List.iter (fun (text, expected) ->
+    let actual = parseWith destructTactic text
+    Assert.Equal<Tactic>(expected, actual))

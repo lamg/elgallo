@@ -55,6 +55,7 @@ type Tactic =
   | Simple of string
   | Level of Level * depth: int * Tactic
   | Rewrite of Direction option * Tactic
+  | Destruct of identifier: string * destructedVar: string * pattern: string list option * eqn: string option
 
 
 [<RequireQualifiedAccess>]
@@ -250,6 +251,20 @@ let definition operators =
   }
 
 let kwStatement s = kw s .>> token "."
+
+let destructTactic =
+  //  destruct n as [| n' ] eqn:E.
+  //  destruct b eqn:E.
+  let pattern = kw "as" >>. between (str "[|") (str "]") (many1 identifier)
+  let eqn = kw "eqn" >>. token ":" >>. identifier
+
+  parse {
+    let! other = identifier
+    let! destructedVar = identifier
+    let! pattern = opt pattern
+    let! eqn = opt eqn
+    return Tactic.Destruct(other, destructedVar, pattern, eqn)
+  }
 
 let rewriteTactic =
   parse {
