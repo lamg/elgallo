@@ -10,12 +10,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install dependencies
-        run: |
-          apt-get update
-          apt-get install -y libz3-dev
-      
+            
       - name: Run tests
         run: |
           dotnet test
