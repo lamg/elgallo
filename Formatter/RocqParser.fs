@@ -52,10 +52,13 @@ type Level =
 
 [<RequireQualifiedAccess>]
 type Tactic =
-  | Simple of string
   | Level of Level * depth: int * Tactic
-  | Rewrite of Direction option * Tactic
-  | Destruct of identifier: string * destructedVar: string * pattern: string list option * eqn: string option
+  | Tactic of
+    identifier: string *
+    Direction option *
+    destructedVar: string option *
+    pattern: string list option *
+    eqn: string option
 
 
 [<RequireQualifiedAccess>]
@@ -252,23 +255,16 @@ let definition operators =
 
 let kwStatement s = kw s .>> token "."
 
-let destructTactic =
+let innerTactic =
+  // simpl.
+  // rewrite <- a.
   //  destruct n as [| n' ] eqn:E.
   //  destruct b eqn:E.
   let pattern = kw "as" >>. between (str "[|") (str "]") (many1 identifier)
   let eqn = kw "eqn" >>. token ":" >>. identifier
 
   parse {
-    let! other = identifier
-    let! destructedVar = identifier
-    let! pattern = opt pattern
-    let! eqn = opt eqn
-    return Tactic.Destruct(other, destructedVar, pattern, eqn)
-  }
-
-let rewriteTactic =
-  parse {
-    do! kw "rewrite"
+    let! id = identifier
 
     let! rewriteDirection =
       opt (
@@ -276,14 +272,17 @@ let rewriteTactic =
         <|> (token "->" >>. preturn Direction.Left)
       )
 
-    let! rewriteWith = identifier
-    return Tactic.Rewrite(rewriteDirection, Tactic.Simple rewriteWith)
+    let! destructedVar = opt identifier
+    let! pattern = opt pattern
+    let! eqn = opt eqn
+    do! token "."
+    return Tactic.Tactic(id, rewriteDirection, destructedVar, pattern, eqn)
   }
 
 let tactic =
   parse {
     let! level = many (str "-") <|> many (str "+") <|> many (str "*")
-    let! innerTactic = rewriteTactic <|> (identifier .>> token "." |>> Tactic.Simple)
+    let! innerTactic = innerTactic
 
     return!
       match level with
@@ -309,8 +308,8 @@ let proof =
       | [] -> Proof.Empty
       | _ ->
         match splitLast tactics with
-        | Tactic.Simple "Qed", xs -> Proof.TacticsQed xs
-        | Tactic.Simple "Admitted", xs -> Proof.TacticsAdmitted xs
+        | Tactic.Tactic("Qed", _, _, _, _), xs -> Proof.TacticsQed xs
+        | Tactic.Tactic("Admitted", _, _, _, _), xs -> Proof.TacticsAdmitted xs
         | _ -> Proof.Tactics tactics
   }
 
