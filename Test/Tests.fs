@@ -21,6 +21,23 @@ let typeParams names t =
 
 let simpleParams name ts = TypeExpr.SimpleParams(name, ts)
 
+let applyTwo f x y =
+  Expr.Apply(Expr.Apply(Expr.Identifier f, Expr.Identifier x), Expr.Identifier y)
+
+let applyOne f x =
+  Expr.Apply(Expr.Identifier f, Expr.Identifier x)
+
+let infixNotation op f x y =
+  Notation.Basic(OperatorKind.Infix(op, x, y), applyTwo f x y)
+
+let prefixNotation op f x =
+  Notation.Basic(OperatorKind.Prefix(op, x), Expr.Apply(Expr.Identifier f, Expr.Identifier x))
+
+
+let postfixNotation op f x =
+  Notation.Basic(OperatorKind.Postfix(op, x), Expr.Apply(Expr.Identifier f, Expr.Identifier x))
+
+
 [<Fact>]
 let ``inductive day type`` () =
   let text =
@@ -136,7 +153,7 @@ let ``comment parsing`` () =
 [<Fact>]
 let ``binary expression`` () =
   let text = "a + b"
-  let plus = Operator("+", 70)
+  let plus = infixNotation "+" "plus" "x" "y"
   let operators = [ "+", plus ] |> Map.ofSeq
   let actual = parseWith (expression operators) text
   let expected = Expr.Binary(plus, Expr.Identifier "a", Expr.Identifier "b")
@@ -204,7 +221,7 @@ Example test_next_working_day:
   (next_working_day (next_working_day saturday)) = tuesday.
 Proof. simpl. reflexivity. Qed."
 
-  let equal = Operator.Operator("=", 40)
+  let equal = infixNotation "=" "equal" "x" "y"
   let operators = [ "=", equal ] |> Map.ofSeq
   let actual = parseWith (example operators) text
 
@@ -213,10 +230,7 @@ Proof. simpl. reflexivity. Qed."
       "test_next_working_day",
       Expr.Binary(
         equal,
-        Expr.Apply(
-          Expr.Identifier "next_working_day",
-          Expr.Apply(Expr.Identifier "next_working_day", Expr.Identifier "saturday")
-        ),
+        Expr.Apply(Expr.Identifier "next_working_day", applyOne "next_working_day" "saturday"),
         Expr.Identifier "tuesday"
       ),
       Proof.TacticsQed [ Tactic.Simple "simpl"; Tactic.Simple "reflexivity" ]
@@ -225,11 +239,12 @@ Proof. simpl. reflexivity. Qed."
   Assert.Equal<AST>(expected, actual)
 
 [<Fact>]
-let ``notation`` () =
-  let text = """Notation "x && y" := (andb x y)."""
-  let actual = parseWith (notation Map.empty) text
-
-  let expected =
-    Notation("x && y", Expr.Apply(Expr.Apply(Expr.Identifier "andb", Expr.Identifier "x"), Expr.Identifier "y"))
-
-  Assert.Equal<AST>(expected, actual)
+let notation () =
+  [ """Notation "x && y" := (andb x y).""", infixNotation "&&" "andb" "x" "y"
+    """Notation "!y" := (not y).""", prefixNotation "!" "not" "y"
+    """Notation "x!" := (not x).""", postfixNotation "!" "not" "x"
+    """Notation "x + y" := (add x y) (at level 50, left associativity).""",
+    Notation.Associative(Notation.AtLevel(infixNotation "+" "add" "x" "y", 50), Direction.Left) ]
+  |> List.iter (fun (text, expected) ->
+    let actual = parseWith (notation Map.empty) text
+    Assert.Equal<Notation>(expected, actual))

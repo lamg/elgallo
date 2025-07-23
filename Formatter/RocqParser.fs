@@ -9,9 +9,26 @@ and [<RequireQualifiedAccess>] TypeExpr =
   | Func of TypeExpr * TypeExpr // nat -> nat
   | SimpleParams of string * TypeParams list // T (n m : nat) (j k: nat)
 
-type Operator = Operator of symbol: string * precedence: int
 
-type Guard = Guard of Pattern * Expr
+[<RequireQualifiedAccess>]
+type OperatorKind =
+  | Infix of op: string * left: string * right: string // x + y
+  | Prefix of op: string * right: string // !x
+  | Postfix of op: string * left: string // x!
+  | Mixfix of OperatorKind list // Notation "'if' c 'then' t 'else' e" := (if c then t else e).
+
+[<RequireQualifiedAccess>]
+type Direction =
+  | Left
+  | Right
+
+[<RequireQualifiedAccess>]
+type Notation =
+  | Basic of OperatorKind * Expr
+  | AtLevel of Notation * atLevel: int
+  | Associative of Notation * Direction
+
+and Guard = Guard of Pattern * Expr
 
 and [<RequireQualifiedAccess>] Pattern =
   | All
@@ -23,7 +40,7 @@ and [<RequireQualifiedAccess>] Expr =
   | Match of exprs: Expr list * guards: Guard list
   | Identifier of string
   | Apply of f: Expr * x: Expr
-  | Binary of operator: Operator * left: Expr * right: Expr
+  | Binary of operator: Notation * left: Expr * right: Expr
   | IfThenElse of cond: Expr * thenExpr: Expr * elseExpr: Expr
 
 [<RequireQualifiedAccess>]
@@ -32,10 +49,6 @@ type Level =
   | Minus
   | Asterisk
 
-[<RequireQualifiedAccess>]
-type Direction =
-  | Left
-  | Right
 
 [<RequireQualifiedAccess>]
 type Tactic =
@@ -58,7 +71,7 @@ type AST =
   | Module
   | RequireImport of longIdent: string list
   | Example of name: string * expression: Expr * proof: Proof
-  | Notation of string: string * expression: Expr
+  | Notation of Notation
 
 // tokenize
 
@@ -174,7 +187,7 @@ let constructorPattern =
       | _ -> xss |> List.map Pattern.Mixed |> Pattern.CommaSep
   }
 
-let expression (operators: Map<string, Operator>) =
+let expression (operators: Map<string, Notation>) =
   let expr, exprRef = createParserForwardedToRef ()
 
   let factor =
@@ -297,6 +310,8 @@ let example operators =
     return Example(id, e, p)
   }
 
+let doubleQuoted = between (str "\"") (str "\"")
+
 let rocqString =
   let str s = pstring s
   let normalCharSnippet = manySatisfy (fun c -> c <> '\\' && c <> '"')
@@ -313,12 +328,122 @@ let rocqString =
   between (str "\"") (str "\"") (stringsSepBy normalCharSnippet escapedChar)
   .>> ws
 
+let rocqOperatorString =
+  let isOperatorChar c =
+    match c with
+    | '!'
+    | '#'
+    | '$'
+    | '%'
+    | '&'
+    | '*'
+    | '+'
+    | '-'
+    | '.'
+    | '/'
+    | ':'
+    | '<'
+    | '='
+    | '>'
+    | '?'
+    | '@'
+    | '^'
+    | '|'
+    | '~'
+    | '\\'
+    | '`' -> true
+    | _ -> false
+
+
+  let operator = many1Satisfy isOperatorChar .>> ws <?> "operator"
+
+  let prefix =
+    parse {
+      let! op = operator
+      let! right = identifier
+      return OperatorKind.Prefix(op, right)
+    }
+
+  let postfixOrInfix =
+    parse {
+      let! left = identifier
+      let! op = operator
+      let! right = opt identifier
+
+      return
+        match right with
+        | None -> OperatorKind.Postfix(op, left)
+        | Some right -> OperatorKind.Infix(op, left, right)
+    }
+
+  doubleQuoted (prefix <|> postfixOrInfix) <?> "notation string"
+
 let notation operators =
+  // Notation "x + y" := (Nat.add x y) (at level 50, left associativity).
+  let atLevel notation =
+    parse {
+      do! kw "at"
+      do! kw "level"
+      let! level = pint
+      return Notation.AtLevel(notation, level)
+    }
+    <|> preturn notation
+    <?> "at level specifier"
+
+  let assocDir notation =
+    parse {
+      do! token ","
+
+      let! dir =
+        kw "left" >>. preturn Direction.Left
+        <|> (kw "right" >>. preturn Direction.Right)
+
+      do! kw "associativity"
+      return Notation.Associative(notation, dir)
+    }
+    <|> preturn notation
+    <?> "associativity specifier"
+
+  let notationOptional notation =
+    betweenParens (
+      parse {
+        let! level = atLevel notation
+        let! assoc = assocDir level
+        return assoc
+      }
+    )
+    <|> preturn notation
+    <?> "notation optional"
+
   parse {
     do! kw "Notation"
-    let! notationString = rocqString
+    let! op = rocqOperatorString
     do! token ":="
-    let! e = expression operators
+    let! e = betweenParens (expression operators)
+    let! r = notationOptional (Notation.Basic(op, e))
     do! token "."
-    return Notation(notationString, e)
+    return r
   }
+  <?> "notation"
+
+
+
+// TODO
+//intros n.
+//     destruct n as [| n' ] eqn:E.
+//     destruct b eqn:E.
+// intros [|n].
+// intros [] [].
+
+// Fixpoint
+// Theorem
+// Module
+
+// | D, (A | B | C) => Lt
+// m₁
+
+// integers
+
+// forall f: bool -> bool,
+//     (forall x, f x = x) ->
+//     forall b, f (f b) = b.
