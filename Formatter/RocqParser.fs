@@ -56,7 +56,7 @@ type Tactic =
   | Tactic of
     identifier: string *
     Direction option *
-    destructedVar: string option *
+    destructedVar: string list *
     pattern: string list option *
     eqn: string option
 
@@ -90,7 +90,7 @@ let kw s =
 let identifier: Parser<string, unit> =
   let isIdStart c = isLetter c
   let isIdChar c = isLetter c || isDigit c || c = '_'
-  let keywords = set [ "match"; "end"; "with" ]
+  let keywords = set [ "match"; "end"; "with"; "as"; "eqn" ]
 
   attempt (
     parse {
@@ -272,7 +272,7 @@ let innerTactic =
         <|> (token "->" >>. preturn Direction.Left)
       )
 
-    let! destructedVar = opt identifier
+    let! destructedVar = many identifier
     let! pattern = opt pattern
     let! eqn = opt eqn
     do! token "."

@@ -37,8 +37,7 @@ let prefixNotation op f x =
 let postfixNotation op f x =
   Notation.Basic(OperatorKind.Postfix(op, x), Expr.Apply(Expr.Identifier f, Expr.Identifier x))
 
-let simpleTactic id =
-  Tactic.Tactic(id, None, None, None, None)
+let simpleTactic id = Tactic.Tactic(id, None, [], None, None)
 
 [<Fact>]
 let ``inductive day type`` () =
@@ -253,10 +252,11 @@ let notation () =
 
 [<Fact>]
 let tactics () =
-  [ "destruct n as [|n'] eqn:E.", Tactic.Tactic("destruct", None, Some "n", Some [ "n'" ], Some "E")
-    "destruct b eqn:E.", Tactic.Tactic("destruct", None, Some "b", None, Some "E")
-    "induction n as [|n' ind].", Tactic.Tactic("induction", None, Some "n", Some [ "n'"; "ind" ], None)
-    "rewrite <- a.", Tactic.Tactic("rewrite", Some Direction.Right, Some "a", None, None) ]
+  [ "destruct n as [|n'] eqn:E.", Tactic.Tactic("destruct", None, [ "n" ], Some [ "n'" ], Some "E")
+    "destruct b eqn:E.", Tactic.Tactic("destruct", None, [ "b" ], None, Some "E")
+    "induction n as [|n' ind].", Tactic.Tactic("induction", None, [ "n" ], Some [ "n'"; "ind" ], None)
+    "rewrite <- a.", Tactic.Tactic("rewrite", Some Direction.Right, [ "a" ], None, None)
+    "intros n m.", Tactic.Tactic("intros", None, [ "n"; "m" ], None, None) ]
   |> List.iter (fun (text, expected) ->
     let actual = parseWith innerTactic text
     Assert.Equal<Tactic>(expected, actual))
