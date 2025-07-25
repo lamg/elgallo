@@ -9,7 +9,6 @@ and [<RequireQualifiedAccess>] TypeExpr =
   | Func of TypeExpr * TypeExpr // nat -> nat
   | SimpleParams of string * TypeParams list // T (n m : nat) (j k: nat)
 
-
 [<RequireQualifiedAccess>]
 type OperatorKind =
   | Infix of op: string * left: string * right: string // x + y
@@ -45,14 +44,15 @@ and [<RequireQualifiedAccess>] Expr =
 
 [<RequireQualifiedAccess>]
 type Level =
-  | Plus
-  | Minus
-  | Asterisk
+  | Plus of int
+  | Minus of int
+  | Asterisk of int
+  | Base
 
 
 [<RequireQualifiedAccess>]
 type Tactic =
-  | Level of Level * depth: int * Tactic
+  | Level of Level * Tactic
   | Tactic of
     identifier: string *
     Direction option *
@@ -60,13 +60,38 @@ type Tactic =
     pattern: string list option *
     eqn: string option
 
+  member this.TacticLevel =
+    match this with
+    | Level(l, _) -> l
+    | _ -> Level.Base
+
+  member this.Identifier =
+    match this with
+    | Level(_, t) -> t.Identifier
+    | Tactic(id, _, _, _, _) -> id
+
+type Tree<'a> =
+  | Tree of value: 'a * children: Tree<'a> list
+
+  member this.Value =
+    let (Tree(v, _)) = this
+    v
+
+  member this.Children =
+    let (Tree(_, xs)) = this
+    xs
 
 [<RequireQualifiedAccess>]
 type Proof =
-  | TacticsQed of Tactic list
-  | TacticsAdmitted of Tactic list
-  | Tactics of Tactic list
-  | Empty
+  | Qed of Tree<Tactic> list
+  | Incomplete of Tree<Tactic> list
+
+type Demonstrandum = Demonstrandum of forall: (string list * TypeExpr option) list * Expr
+
+type LawKind =
+  | Lemma
+  | Theorem
+  | Example
 
 type AST =
   | Definition of name: string * funcParams: TypeParams list * resultType: TypeExpr option * body: Expr
@@ -74,7 +99,7 @@ type AST =
   | Inductive of newType: TypeExpr * baseType: TypeExpr * cases: TypeExpr list
   | Module
   | RequireImport of longIdent: string list
-  | Example of name: string * expression: Expr * proof: Proof
+  | Law of name: string * kind: LawKind * Demonstrandum * proof: Proof
   | Notation of Notation
 
 // tokenize
@@ -279,17 +304,18 @@ let innerTactic =
     return Tactic.Tactic(id, rewriteDirection, destructedVar, pattern, eqn)
   }
 
+
 let tactic =
   parse {
-    let! level = many (str "-") <|> many (str "+") <|> many (str "*")
+    let! level = many (str "-" <|> str "+" <|> str "*")
     let! innerTactic = innerTactic
 
     return!
       match level with
       | [] -> preturn innerTactic
-      | "-" :: _ -> preturn (Tactic.Level(Level.Minus, level.Length, innerTactic))
-      | "+" :: _ -> preturn (Tactic.Level(Level.Plus, level.Length, innerTactic))
-      | "*" :: _ -> preturn (Tactic.Level(Level.Minus, level.Length, innerTactic))
+      | "-" :: _ -> preturn (Tactic.Level(Level.Minus level.Length, innerTactic))
+      | "+" :: _ -> preturn (Tactic.Level(Level.Plus level.Length, innerTactic))
+      | "*" :: _ -> preturn (Tactic.Level(Level.Minus level.Length, innerTactic))
       | _ -> fail $"unrecognized level pattern {level}"
   }
 
@@ -298,6 +324,46 @@ let splitLast xs =
   | [] -> failwith "splitLast does not accept empty lists"
   | y :: ys -> y, List.rev ys
 
+/// given a list of tactics creates a list of tactic trees according the
+/// proper nesting level of each tactic
+let rec tacticsAsTree (tactics: Tactic list) =
+  let initial =
+    tactics
+    |> List.takeWhile (fun t -> t.TacticLevel = Level.Base)
+    |> List.map (fun x -> Tree(x, []))
+
+  let remaining = tactics |> List.skip initial.Length
+
+  match remaining with
+  | [] -> initial
+  | y :: ys ->
+
+    let segments, rm =
+      y :: ys
+      |> List.fold
+        (fun (acc, currentSegment) y' ->
+          if y'.TacticLevel = y.TacticLevel then
+            List.rev currentSegment :: acc, [ y' ]
+          else
+            acc, y' :: currentSegment)
+        ([], [])
+
+    let segments = segments @ [ List.rev rm ]
+
+    let treeSegments =
+      segments
+      |> List.filter (_.IsEmpty >> not)
+      |> List.map (function
+        | [] -> failwith "internal error: segment must be non-empty"
+        | y :: ys -> Tree(y, tacticsAsTree ys))
+
+
+    match initial with
+    | [] -> treeSegments
+    | _ ->
+      let last, init = splitLast initial
+      init @ [ Tree(last.Value, treeSegments) ]
+
 let proof =
   parse {
     do! kwStatement "Proof"
@@ -305,23 +371,46 @@ let proof =
 
     return
       match tactics with
-      | [] -> Proof.Empty
+      | [] -> Proof.Incomplete []
       | _ ->
         match splitLast tactics with
-        | Tactic.Tactic("Qed", _, _, _, _), xs -> Proof.TacticsQed xs
-        | Tactic.Tactic("Admitted", _, _, _, _), xs -> Proof.TacticsAdmitted xs
-        | _ -> Proof.Tactics tactics
+        | Tactic.Tactic("Qed", _, _, _, _), tacticsButLast -> tacticsButLast |> tacticsAsTree |> Proof.Qed
+        | _, _ -> tacticsAsTree tactics |> Proof.Incomplete
   }
 
-let example operators =
+let demonstrandum operators =
+  let varDecl =
+    parse {
+      let! vars = many1 identifier
+      let! typeSpec = opt (token ":" >>. typeExpr)
+      return vars, typeSpec
+    }
+
+  let varDecls = many1 (varDecl .>> token ",")
+
   parse {
-    do! kw "Example"
+    let! forall = opt (kw "forall" >>. varDecls)
+    let! e = expression operators
+    let forall = Option.defaultValue [] forall
+    do! token "."
+    return Demonstrandum(forall, e)
+  }
+
+let kwValue k v = kw k >>. preturn v
+
+let law operators =
+  parse {
+    let! kind =
+      choice
+        [ kwValue "Example" LawKind.Example
+          kwValue "Theorem" LawKind.Theorem
+          kwValue "Lemma" LawKind.Lemma ]
+
     let! id = identifier
     do! token ":"
-    let! e = expression operators
-    do! token "."
-    let! p = proof
-    return Example(id, e, p)
+    let! body = demonstrandum operators
+    let! proof = proof
+    return Law(id, kind, body, proof)
   }
 
 let doubleQuoted = between (str "\"") (str "\"")
@@ -367,7 +456,6 @@ let rocqOperatorString =
     | '\\'
     | '`' -> true
     | _ -> false
-
 
   let operator = many1Satisfy isOperatorChar .>> ws <?> "operator"
 
@@ -443,10 +531,6 @@ let notation operators =
 
 
 // TODO
-//intros n.
-//     destruct n as [| n' ] eqn:E.
-//     destruct b eqn:E.
-// intros [|n].
 // intros [] [].
 
 // Fixpoint

@@ -39,6 +39,13 @@ let postfixNotation op f x =
 
 let simpleTactic id = Tactic.Tactic(id, None, [], None, None)
 
+let varTactic id vars =
+  Tactic.Tactic(id, None, vars, None, None)
+
+let equal = infixNotation "=" "equal" "x" "y"
+let implies = infixNotation "->" "implies" "x" "y"
+let basicOperators = [ "=", equal; "->", implies ] |> Map.ofList
+
 [<Fact>]
 let ``inductive day type`` () =
   let text =
@@ -222,19 +229,22 @@ Example test_next_working_day:
   (next_working_day (next_working_day saturday)) = tuesday.
 Proof. simpl. reflexivity. Qed."
 
-  let equal = infixNotation "=" "equal" "x" "y"
-  let operators = [ "=", equal ] |> Map.ofSeq
-  let actual = parseWith (example operators) text
+  let actual = parseWith (law basicOperators) text
 
   let expected =
-    Example(
+    Law(
       "test_next_working_day",
-      Expr.Binary(
-        equal,
-        Expr.Apply(Expr.Identifier "next_working_day", applyOne "next_working_day" "saturday"),
-        Expr.Identifier "tuesday"
+      LawKind.Example,
+      Demonstrandum(
+        [],
+        Expr.Binary(
+          equal,
+          Expr.Apply(Expr.Identifier "next_working_day", applyOne "next_working_day" "saturday"),
+          Expr.Identifier "tuesday"
+        )
       ),
-      Proof.TacticsQed [ simpleTactic "simpl"; simpleTactic "reflexivity" ]
+      Proof.Qed [ Tree(simpleTactic "simpl", []); Tree(simpleTactic "reflexivity", []) ]
+
     )
 
   Assert.Equal<AST>(expected, actual)
@@ -260,3 +270,49 @@ let tactics () =
   |> List.iter (fun (text, expected) ->
     let actual = parseWith innerTactic text
     Assert.Equal<Tactic>(expected, actual))
+
+[<Fact>]
+let ``theorem with forall`` () =
+  let text =
+    "
+Theorem andb_eq_orb:
+    forall x y,
+    (andb x y = orb x y) ->
+    x = y.
+  Proof.
+    intros x y.
+    destruct x eqn:E.
+    - simpl.
+      + intro a. rewrite a. reflexivity.
+    - simpl.
+      + intro a. rewrite a. reflexivity.
+  Qed."
+
+  let actual = parseWith (law basicOperators) text
+
+  let demExpr =
+    Expr.Binary(implies, Expr.Binary(equal, applyTwo "andb" "x" "y", applyTwo "orb" "x" "y"), applyTwo "=" "x" "y")
+
+  let forallVars = [ [ "x"; "y" ], None ]
+  let demonstrandum = Demonstrandum(forallVars, demExpr)
+
+  let intro_a_tree =
+    Tree(
+      Tactic.Level(Level.Minus 1, simpleTactic "simpl"),
+      [ Tree(
+          Tactic.Level(Level.Plus 1, varTactic "intro" [ "a" ]),
+          [ Tree(varTactic "rewrite" [ "a" ], []); Tree(simpleTactic "reflexivity", []) ]
+        ) ]
+    )
+
+  let proof =
+    [ Tree(Tactic.Tactic("intros", None, [ "x"; "y" ], None, None), [])
+      Tree(Tactic.Tactic("destruct", None, [ "x" ], None, Some "E"), [ intro_a_tree; intro_a_tree ]) ]
+    |> Proof.Qed
+
+
+  let expected = Law("andb_eq_orb", LawKind.Theorem, demonstrandum, proof)
+
+  match expected, actual with
+  | AST.Law(_, _, _, p), AST.Law(_, _, _, q) -> Assert.Equal<Proof>(p, q)
+  | _ -> failwith "expecting a law"
