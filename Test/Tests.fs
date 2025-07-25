@@ -37,10 +37,10 @@ let prefixNotation op f x =
 let postfixNotation op f x =
   Notation.Basic(OperatorKind.Postfix(op, x), Expr.Apply(Expr.Identifier f, Expr.Identifier x))
 
-let simpleTactic id = Tactic.Tactic(id, None, [], None, None)
+let simpleTactic id = Tactic.Tactic(id, [])
 
 let varTactic id vars =
-  Tactic.Tactic(id, None, vars, None, None)
+  Tactic.Tactic(id, [ DestructedVars vars ])
 
 let equal = infixNotation "=" "equal" "x" "y"
 let implies = infixNotation "->" "implies" "x" "y"
@@ -262,11 +262,11 @@ let notation () =
 
 [<Fact>]
 let tactics () =
-  [ "destruct n as [|n'] eqn:E.", Tactic.Tactic("destruct", None, [ "n" ], Some [ "n'" ], Some "E")
-    "destruct b eqn:E.", Tactic.Tactic("destruct", None, [ "b" ], None, Some "E")
-    "induction n as [|n' ind].", Tactic.Tactic("induction", None, [ "n" ], Some [ "n'"; "ind" ], None)
-    "rewrite <- a.", Tactic.Tactic("rewrite", Some Direction.Right, [ "a" ], None, None)
-    "intros n m.", Tactic.Tactic("intros", None, [ "n"; "m" ], None, None) ]
+  [ "destruct n as [|n'] eqn:E.", Tactic.Tactic("destruct", [ DestructedVars [ "n" ]; Patterns [ [ "n'" ] ]; Eqn "E" ])
+    "destruct b eqn:E.", Tactic.Tactic("destruct", [ DestructedVars [ "b" ]; Eqn "E" ])
+    "induction n as [|n' ind].", Tactic.Tactic("induction", [ DestructedVars["n"]; Patterns [ [ "n'"; "ind" ] ] ])
+    "rewrite <- a.", Tactic.Tactic("rewrite", [ Direction Direction.Right; DestructedVars [ "a" ] ])
+    "intros n m.", Tactic.Tactic("intros", [ DestructedVars [ "n"; "m" ] ]) ]
   |> List.iter (fun (text, expected) ->
     let actual = parseWith innerTactic text
     Assert.Equal<Tactic>(expected, actual))
@@ -310,8 +310,8 @@ Theorem andb_eq_orb:
     )
 
   let proof =
-    [ Tree(Tactic.Tactic("intros", None, [ "x"; "y" ], None, None), [])
-      Tree(Tactic.Tactic("destruct", None, [ "x" ], None, Some "E"), [ intro_a_tree; intro_a_tree ]) ]
+    [ Tree(Tactic.Tactic("intros", [ DestructedVars [ "x"; "y" ] ]), [])
+      Tree(Tactic.Tactic("destruct", [ DestructedVars["x"]; Eqn "E" ]), [ intro_a_tree; intro_a_tree ]) ]
     |> Proof.Qed
 
 

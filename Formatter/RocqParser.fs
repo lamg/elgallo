@@ -49,16 +49,16 @@ type Level =
   | Asterisk of int
   | Base
 
+type TacticArgument =
+  | Direction of Direction
+  | DestructedVars of string list
+  | Patterns of string list list
+  | Eqn of string
 
 [<RequireQualifiedAccess>]
 type Tactic =
   | Level of Level * Tactic
-  | Tactic of
-    identifier: string *
-    Direction option *
-    destructedVar: string list *
-    pattern: string list option *
-    eqn: string option
+  | Tactic of identifier: string * args: TacticArgument list
 
   member this.TacticLevel =
     match this with
@@ -68,7 +68,7 @@ type Tactic =
   member this.Identifier =
     match this with
     | Level(_, t) -> t.Identifier
-    | Tactic(id, _, _, _, _) -> id
+    | Tactic(id, _) -> id
 
 type Tree<'a> =
   | Tree of value: 'a * children: Tree<'a> list
@@ -298,10 +298,26 @@ let innerTactic =
       )
 
     let! destructedVar = many identifier
-    let! pattern = opt pattern
+
+    let dvar =
+      destructedVar
+      |> function
+        | [] -> None
+        | _ -> Some destructedVar
+
+    let! pattern = opt pattern |>> Option.map (fun x -> [ x ])
     let! eqn = opt eqn
     do! token "."
-    return Tactic.Tactic(id, rewriteDirection, destructedVar, pattern, eqn)
+
+    return
+      Tactic.Tactic(
+        id,
+        [ Option.map Direction rewriteDirection
+          Option.map DestructedVars dvar
+          Option.map Patterns pattern
+          Option.map Eqn eqn ]
+        |> List.choose Core.Operators.id
+      )
   }
 
 
@@ -374,7 +390,7 @@ let proof =
       | [] -> Proof.Incomplete []
       | _ ->
         match splitLast tactics with
-        | Tactic.Tactic("Qed", _, _, _, _), tacticsButLast -> tacticsButLast |> tacticsAsTree |> Proof.Qed
+        | Tactic.Tactic("Qed", _), tacticsButLast -> tacticsButLast |> tacticsAsTree |> Proof.Qed
         | _, _ -> tacticsAsTree tactics |> Proof.Incomplete
   }
 
