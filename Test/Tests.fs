@@ -291,7 +291,11 @@ Theorem andb_eq_orb:
   let actual = parseWith (law basicOperators) text
 
   let demExpr =
-    Expr.Binary(implies, Expr.Binary(equal, applyTwo "andb" "x" "y", applyTwo "orb" "x" "y"), applyTwo "=" "x" "y")
+    Expr.Binary(
+      implies,
+      Expr.Binary(equal, applyTwo "andb" "x" "y", applyTwo "orb" "x" "y"),
+      Expr.Binary(equal, Expr.Identifier "x", Expr.Identifier "y")
+    )
 
   let forallVars = [ [ "x"; "y" ], None ]
   let demonstrandum = Demonstrandum(forallVars, demExpr)
@@ -314,5 +318,8 @@ Theorem andb_eq_orb:
   let expected = Law("andb_eq_orb", LawKind.Theorem, demonstrandum, proof)
 
   match expected, actual with
-  | AST.Law(_, _, _, p), AST.Law(_, _, _, q) -> Assert.Equal<Proof>(p, q)
+  | AST.Law(_, _, d, p), AST.Law(_, _, e, q) ->
+    Assert.Equal<Proof>(p, q)
+    Assert.Equal<Demonstrandum>(d, e)
+    Assert.Equal<AST>(expected, actual)
   | _ -> failwith "expecting a law"
