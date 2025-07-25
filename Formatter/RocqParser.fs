@@ -54,6 +54,7 @@ type TacticArgument =
   | DestructedVars of string list
   | Patterns of string list list
   | Eqn of string
+  | EmptyBrackets
 
 [<RequireQualifiedAccess>]
 type Tactic =
@@ -286,38 +287,23 @@ let innerTactic =
   //  destruct n as [| n' ] eqn:E.
   //  destruct b eqn:E.
   let pattern = kw "as" >>. between (str "[|") (str "]") (many1 identifier)
-  let eqn = kw "eqn" >>. token ":" >>. identifier
+  let eqn = kw "eqn" >>. token ":" >>. identifier |>> Eqn
+  let emptyBrackets = token "[" >>. token "]" >>. preturn EmptyBrackets
+
+  let rewriteDirection =
+    token "<-" >>. preturn Direction.Right
+    <|> (token "->" >>. preturn Direction.Left)
+    |>> Direction
+
+  let destructedVar = many1 identifier |>> DestructedVars
+
+  let pat = pattern |>> fun x -> Patterns [ x ]
 
   parse {
     let! id = identifier
-
-    let! rewriteDirection =
-      opt (
-        token "<-" >>. preturn Direction.Right
-        <|> (token "->" >>. preturn Direction.Left)
-      )
-
-    let! destructedVar = many identifier
-
-    let dvar =
-      destructedVar
-      |> function
-        | [] -> None
-        | _ -> Some destructedVar
-
-    let! pattern = opt pattern |>> Option.map (fun x -> [ x ])
-    let! eqn = opt eqn
+    let! args = many (rewriteDirection <|> destructedVar <|> pat <|> eqn <|> emptyBrackets)
     do! token "."
-
-    return
-      Tactic.Tactic(
-        id,
-        [ Option.map Direction rewriteDirection
-          Option.map DestructedVars dvar
-          Option.map Patterns pattern
-          Option.map Eqn eqn ]
-        |> List.choose Core.Operators.id
-      )
+    return Tactic.Tactic(id, args)
   }
 
 
@@ -547,7 +533,6 @@ let notation operators =
 
 
 // TODO
-// intros [] [].
 
 // Fixpoint
 // Theorem

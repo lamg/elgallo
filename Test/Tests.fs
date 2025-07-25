@@ -266,7 +266,8 @@ let tactics () =
     "destruct b eqn:E.", Tactic.Tactic("destruct", [ DestructedVars [ "b" ]; Eqn "E" ])
     "induction n as [|n' ind].", Tactic.Tactic("induction", [ DestructedVars["n"]; Patterns [ [ "n'"; "ind" ] ] ])
     "rewrite <- a.", Tactic.Tactic("rewrite", [ Direction Direction.Right; DestructedVars [ "a" ] ])
-    "intros n m.", Tactic.Tactic("intros", [ DestructedVars [ "n"; "m" ] ]) ]
+    "intros n m.", Tactic.Tactic("intros", [ DestructedVars [ "n"; "m" ] ])
+    "intros [] [].", Tactic.Tactic("intros", [ EmptyBrackets; EmptyBrackets ]) ]
   |> List.iter (fun (text, expected) ->
     let actual = parseWith innerTactic text
     Assert.Equal<Tactic>(expected, actual))
