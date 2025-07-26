@@ -113,9 +113,26 @@ let token s = pstring s >>. ws
 let kw s =
   pstring s .>> notFollowedBy letter >>. ws
 
+open System
+open System.Globalization
+
 let identifier: Parser<string, unit> =
-  let isIdStart c = isLetter c
-  let isIdChar c = isLetter c || isDigit c || c = '_'
+
+  let isIdStart c = Char.IsLetter c || c = '_'
+
+  let isIdChar (c: char) =
+    match CharUnicodeInfo.GetUnicodeCategory c with
+    | UnicodeCategory.UppercaseLetter
+    | UnicodeCategory.LowercaseLetter
+    | UnicodeCategory.TitlecaseLetter
+    | UnicodeCategory.ModifierLetter
+    | UnicodeCategory.OtherLetter
+    | UnicodeCategory.OtherNumber
+    | UnicodeCategory.DecimalDigitNumber
+    | UnicodeCategory.NonSpacingMark
+    | UnicodeCategory.SpacingCombiningMark -> true
+    | _ -> c = '_'
+
   let keywords = set [ "match"; "end"; "with"; "as"; "eqn" ]
 
   attempt (
@@ -126,7 +143,7 @@ let identifier: Parser<string, unit> =
       do! ws
 
       return!
-        if keywords.Contains id then
+        if keywords.Contains id || id = "_" then
           fail $"keyword {id} not a valid identifier"
         else
           preturn id

@@ -11,6 +11,10 @@ let parseWith parser text =
   | Success(r, _, _) -> r
   | Failure(msg, _, _) -> failwith msg
 
+let tryParseWith parser text =
+  match run parser text with
+  | Success(r, _, _) -> Some r
+  | _ -> None
 
 let parseInductive text = parseWith inductiveType text
 
@@ -45,6 +49,13 @@ let varTactic id vars =
 let equal = infixNotation "=" "equal" "x" "y"
 let implies = infixNotation "->" "implies" "x" "y"
 let basicOperators = [ "=", equal; "->", implies ] |> Map.ofList
+
+[<Fact>]
+let identifiers () =
+  [ "id", Some "id"; "_", None; "m₀", Some "m₀"; "ℓ", Some "ℓ"; "ℓ_", Some "ℓ_" ]
+  |> List.iter (fun (text, expected) ->
+    let actual = tryParseWith identifier text
+    Assert.Equal(expected, actual))
 
 [<Fact>]
 let ``inductive day type`` () =
