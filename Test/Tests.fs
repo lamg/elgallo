@@ -170,13 +170,15 @@ let ``comment parsing`` () =
 
 
 [<Fact>]
-let ``binary expression`` () =
-  let text = "a + b"
+let ``simple expressions`` () =
   let plus = infixNotation "+" "plus" "x" "y"
   let operators = [ "+", plus ] |> Map.ofSeq
-  let actual = parseWith (expression operators) text
-  let expected = Expr.Binary(plus, Expr.Identifier "a", Expr.Identifier "b")
-  Assert.Equal<Expr>(expected, actual)
+
+  [ "a+b", Expr.Binary(plus, Expr.Identifier "a", Expr.Identifier "b")
+    "11", Expr.Integer 11 ]
+  |> List.iter (fun (text, expected) ->
+    let actual = parseWith (expression operators) text
+    Assert.Equal<Expr>(expected, actual))
 
 [<Fact>]
 let ``function call`` () =

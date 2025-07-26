@@ -41,6 +41,7 @@ and [<RequireQualifiedAccess>] Pattern =
 and [<RequireQualifiedAccess>] Expr =
   | Match of exprs: Expr list * guards: Guard list
   | Identifier of string
+  | Integer of int
   | Apply of f: Expr * x: Expr
   | Binary of operator: Notation * left: Expr * right: Expr
   | IfThenElse of cond: Expr * thenExpr: Expr * elseExpr: Expr
@@ -269,10 +270,11 @@ let pattern =
 
 let expression (operators: Map<string, Notation>) =
   let expr, exprRef = createParserForwardedToRef ()
+  let integer = pint |>> Expr.Integer
 
   let factor =
     parse {
-      let! xs = many1 (identifierExpr <|> betweenParens expr)
+      let! xs = many1 (identifierExpr <|> integer <|> betweenParens expr)
 
       return
         match xs with
