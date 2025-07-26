@@ -145,8 +145,8 @@ Definition orb (x: bool) (y: bool): bool :=
   let expectedMatch =
     Expr.Match(
       [ Expr.Identifier "x" ],
-      [ Guard(Pattern.Identifier "true", Expr.Identifier "true")
-        Guard(Pattern.Identifier "false", Expr.Identifier "y") ]
+      [ Guard.Guard(Pattern.Identifier "true", Expr.Identifier "true")
+        Guard.Guard(Pattern.Identifier "false", Expr.Identifier "y") ]
     )
 
   let expected =
@@ -193,6 +193,7 @@ let ``match f x`` () =
 match f x with
 | Coq y => false
 | Rocq z => true
+| A | B => false
 end
   "
 
@@ -201,16 +202,18 @@ end
   let expected =
     Expr.Match(
       [ Expr.Apply(Expr.Identifier "f", Expr.Identifier "x") ],
-      [ Guard(
+      [ Guard.Guard(
           Pattern.Mixed[Pattern.Identifier "Coq"
                         Pattern.Identifier "y"],
           Expr.Identifier "false"
         )
-        Guard(
+        Guard.Guard(
           Pattern.Mixed[Pattern.Identifier "Rocq"
                         Pattern.Identifier "z"],
           Expr.Identifier "true"
-        ) ]
+        )
+        Guard.Pattern(Pattern.Identifier "A")
+        Guard.Guard(Pattern.Identifier "B", Expr.Identifier "false") ]
     )
 
   Assert.Equal<Expr>(expected, actual)

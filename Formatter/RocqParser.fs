@@ -27,7 +27,9 @@ type Notation =
   | AtLevel of Notation * atLevel: int
   | Associative of Notation * Direction
 
-and Guard = Guard of Pattern * Expr
+and [<RequireQualifiedAccess>] Guard =
+  | Guard of Pattern * Expr
+  | Pattern of Pattern
 
 and [<RequireQualifiedAccess>] Pattern =
   | All
@@ -249,11 +251,16 @@ let expression (operators: Map<string, Notation>) =
     }
 
   let guard =
+    let fullGuard pattern =
+      parse {
+        do! token "=>"
+        let! e = expr
+        return Guard.Guard(pattern, e)
+      }
+
     parse {
       let! pattern = constructorPattern
-      do! token "=>"
-      let! e = expr
-      return Guard(pattern, e)
+      return! fullGuard pattern <|> preturn (Guard.Pattern pattern)
     }
 
   let matchExpr =
@@ -554,9 +561,6 @@ let notation operators =
 // Fixpoint
 // Theorem
 // Module
-
-// | D, (A | B | C) => Lt
-// m₁
 
 // integers
 
