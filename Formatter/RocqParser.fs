@@ -34,8 +34,9 @@ and [<RequireQualifiedAccess>] Guard =
 and [<RequireQualifiedAccess>] Pattern =
   | All
   | Identifier of string
-  | Mixed of Pattern list
+  | ConstructorWithParams of Pattern list
   | CommaSep of Pattern list
+  | NestedAlt of Pattern list
 
 and [<RequireQualifiedAccess>] Expr =
   | Match of exprs: Expr list * guards: Guard list
@@ -96,9 +97,19 @@ type LawKind =
   | Theorem
   | Example
 
-type AST =
-  | Definition of name: string * funcParams: TypeParams list * resultType: TypeExpr option * body: Expr
+type FunctionType =
+  | Definition
   | Fixpoint
+
+type Function =
+  { name: string
+    functionParams: TypeParams list
+    resultType: TypeExpr option
+    body: Expr
+    functionType: FunctionType }
+
+type AST =
+  | Function of Function
   | Inductive of newType: TypeExpr * baseType: TypeExpr * cases: TypeExpr list
   | Module
   | RequireImport of longIdent: string list
@@ -218,23 +229,44 @@ let requireImport =
 
 let identifierExpr = identifier |>> Expr.Identifier
 
+let pattern =
+  let constructorPattern nested =
+    let simple =
+      identifier |>> Pattern.Identifier
+      <|> (token "_" |>> fun _ -> Pattern.All)
+      <|> nested
 
-let constructorPattern =
-  let simple =
-    identifier |>> Pattern.Identifier <|> (token "_" |>> fun _ -> Pattern.All)
+    let mixed =
+      parse {
+        let! xs = many1 simple
 
-  let mixed = many1 simple
-  let commaSep = sepBy mixed (token ",")
+        return
+          match xs with
+          | [ x ] -> x
+          | _ -> Pattern.ConstructorWithParams xs
+      }
 
-  parse {
-    let! xss = commaSep
+    parse {
+      let! xs = sepBy mixed (token ",")
 
-    return
-      match xss with
-      | [ [ x ] ] -> x
-      | [ xs ] -> Pattern.Mixed xs
-      | _ -> xss |> List.map Pattern.Mixed |> Pattern.CommaSep
-  }
+      return
+        match xs with
+        | [ x ] -> x
+        | _ -> Pattern.CommaSep xs
+    }
+
+
+  let nestedAlternatives inner =
+    parse {
+      let! nested = betweenParens (sepBy inner (token "|"))
+      return Pattern.NestedAlt nested
+    }
+
+  let pat, patRef = createParserForwardedToRef ()
+  let nested = nestedAlternatives pat
+  let basic = constructorPattern nested
+  patRef.Value <- basic
+  pat
 
 let expression (operators: Map<string, Notation>) =
   let expr, exprRef = createParserForwardedToRef ()
@@ -259,8 +291,9 @@ let expression (operators: Map<string, Notation>) =
       }
 
     parse {
-      let! pattern = constructorPattern
-      return! fullGuard pattern <|> preturn (Guard.Pattern pattern)
+      do! token "|"
+      let! p = pattern
+      return! fullGuard p <|> preturn (Guard.Pattern p)
     }
 
   let matchExpr =
@@ -268,7 +301,7 @@ let expression (operators: Map<string, Notation>) =
       do! kw "match"
       let! exprs = sepBy1 expr (token ",")
       do! kw "with"
-      let! guards = many1 (token "|" >>. guard)
+      let! guards = many1 guard
       do! kw "end"
       return Expr.Match(exprs, guards)
     }
@@ -291,16 +324,23 @@ let expression (operators: Map<string, Notation>) =
 
   expr
 
-let definition operators =
+let rocqFunction operators =
   parse {
-    do! kw "Definition"
+    let! functionType = kw "Definition" >>. preturn Definition <|> (kw "Fixpoint" >>. preturn Fixpoint)
     let! name = identifier
     let! funcParams = many (typeParams typeExpr)
     let! resultType = opt (token ":" >>. typeExpr)
     do! token ":="
     let! e = expression operators
     do! token "."
-    return Definition(name, funcParams, resultType, e)
+
+    return
+      Function
+        { name = name
+          functionParams = funcParams
+          resultType = resultType
+          body = e
+          functionType = functionType }
   }
 
 let kwStatement s = kw s .>> token "."
@@ -558,7 +598,6 @@ let notation operators =
 
 // TODO
 
-// Fixpoint
 // Theorem
 // Module
 

@@ -140,7 +140,7 @@ Definition orb (x: bool) (y: bool): bool :=
   end.
   "
 
-  let actual = parseWith (definition Map.empty) text
+  let actual = parseWith (rocqFunction Map.empty) text
 
   let expectedMatch =
     Expr.Match(
@@ -150,12 +150,12 @@ Definition orb (x: bool) (y: bool): bool :=
     )
 
   let expected =
-    Definition(
-      "orb",
-      [ typeParams [ "x" ] "bool"; typeParams [ "y" ] "bool" ],
-      Some(TypeExpr.Simple "bool"),
-      expectedMatch
-    )
+    Function
+      { name = "orb"
+        functionParams = [ typeParams [ "x" ] "bool"; typeParams [ "y" ] "bool" ]
+        resultType = Some(TypeExpr.Simple "bool")
+        body = expectedMatch
+        functionType = Definition }
 
   Assert.Equal<AST>(expected, actual)
 
@@ -193,7 +193,7 @@ let ``match f x`` () =
 match f x with
 | Coq y => false
 | Rocq z => true
-| A | B => false
+| (A | B) => false
 end
   "
 
@@ -203,36 +203,40 @@ end
     Expr.Match(
       [ Expr.Apply(Expr.Identifier "f", Expr.Identifier "x") ],
       [ Guard.Guard(
-          Pattern.Mixed[Pattern.Identifier "Coq"
-                        Pattern.Identifier "y"],
+          Pattern.ConstructorWithParams[Pattern.Identifier "Coq"
+                                        Pattern.Identifier "y"],
           Expr.Identifier "false"
         )
         Guard.Guard(
-          Pattern.Mixed[Pattern.Identifier "Rocq"
-                        Pattern.Identifier "z"],
+          Pattern.ConstructorWithParams[Pattern.Identifier "Rocq"
+                                        Pattern.Identifier "z"],
           Expr.Identifier "true"
         )
-        Guard.Pattern(Pattern.Identifier "A")
-        Guard.Guard(Pattern.Identifier "B", Expr.Identifier "false") ]
+        Guard.Guard(Pattern.NestedAlt [ Pattern.Identifier "A"; Pattern.Identifier "B" ], Expr.Identifier "false") ]
     )
 
   Assert.Equal<Expr>(expected, actual)
 
 [<Fact>]
 let ``various patterns`` () =
-  [ "Coq x y", Pattern.Mixed [ Pattern.Identifier "Coq"; Pattern.Identifier "x"; Pattern.Identifier "y" ]
+  [ "Coq x y",
+    Pattern.ConstructorWithParams [ Pattern.Identifier "Coq"; Pattern.Identifier "x"; Pattern.Identifier "y" ]
     "Coq _ _",
-    Pattern.Mixed[Pattern.Identifier "Coq"
-                  Pattern.All
-                  Pattern.All]
+    Pattern.ConstructorWithParams[Pattern.Identifier "Coq"
+                                  Pattern.All
+                                  Pattern.All]
     "Coq _, Rocq _",
     Pattern.CommaSep
-      [ Pattern.Mixed[Pattern.Identifier "Coq"
-                      Pattern.All]
-        Pattern.Mixed[Pattern.Identifier "Rocq"
-                      Pattern.All] ] ]
+      [ Pattern.ConstructorWithParams[Pattern.Identifier "Coq"
+                                      Pattern.All]
+        Pattern.ConstructorWithParams[Pattern.Identifier "Rocq"
+                                      Pattern.All] ]
+    "A, (B | C)",
+    Pattern.CommaSep
+      [ Pattern.Identifier "A"
+        Pattern.NestedAlt [ Pattern.Identifier "B"; Pattern.Identifier "C" ] ] ]
   |> List.iter (fun (text, expected) ->
-    let actual = parseWith constructorPattern text
+    let actual = parseWith pattern text
     Assert.Equal<Pattern>(expected, actual))
 
 [<Fact>]
