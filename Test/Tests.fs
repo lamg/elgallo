@@ -187,6 +187,30 @@ let ``function call`` () =
   Assert.Equal<Expr>(expected, actual)
 
 [<Fact>]
+let ``forall expression`` () =
+  let text =
+    "
+    forall f: bool -> bool,
+    (forall x, f x = x) ->
+    forall b, f (f b) = b"
+
+  let boolT = TypeExpr.Simple "bool"
+
+  let left =
+    Expr.Forall([ [ "x" ], None ], Expr.Binary(equal, applyOne "f" "x", Expr.Identifier "x"))
+
+  let ffb = Expr.Apply(Expr.Identifier "f", applyOne "f" "b")
+
+  let right =
+    Expr.Forall([ [ "b" ], None ], Expr.Binary(equal, ffb, Expr.Identifier "b"))
+
+  let body = Expr.Binary(implies, left, right)
+  let expected = Expr.Forall([ [ "f" ], Some(TypeExpr.Func(boolT, boolT)) ], body)
+  let actual = parseWith (expression basicOperators) text
+  Assert.Equal<Expr>(expected, actual)
+
+
+[<Fact>]
 let ``match f x`` () =
   let text =
     "
@@ -253,13 +277,10 @@ Proof. simpl. reflexivity. Qed."
     Law(
       "test_next_working_day",
       LawKind.Example,
-      Demonstrandum(
-        [],
-        Expr.Binary(
-          equal,
-          Expr.Apply(Expr.Identifier "next_working_day", applyOne "next_working_day" "saturday"),
-          Expr.Identifier "tuesday"
-        )
+      Expr.Binary(
+        equal,
+        Expr.Apply(Expr.Identifier "next_working_day", applyOne "next_working_day" "saturday"),
+        Expr.Identifier "tuesday"
       ),
       Proof.Qed [ Tree(simpleTactic "simpl", []); Tree(simpleTactic "reflexivity", []) ]
 
@@ -317,7 +338,7 @@ Theorem andb_eq_orb:
     )
 
   let forallVars = [ [ "x"; "y" ], None ]
-  let demonstrandum = Demonstrandum(forallVars, demExpr)
+  let demonstrandum = Expr.Forall(forallVars, demExpr)
 
   let intro_a_tree =
     Tree(
@@ -339,6 +360,6 @@ Theorem andb_eq_orb:
   match expected, actual with
   | AST.Law(_, _, d, p), AST.Law(_, _, e, q) ->
     Assert.Equal<Proof>(p, q)
-    Assert.Equal<Demonstrandum>(d, e)
+    Assert.Equal<Expr>(d, e)
     Assert.Equal<AST>(expected, actual)
   | _ -> failwith "expecting a law"

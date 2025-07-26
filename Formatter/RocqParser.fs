@@ -44,6 +44,7 @@ and [<RequireQualifiedAccess>] Expr =
   | Apply of f: Expr * x: Expr
   | Binary of operator: Notation * left: Expr * right: Expr
   | IfThenElse of cond: Expr * thenExpr: Expr * elseExpr: Expr
+  | Forall of (string list * TypeExpr option) list * expr: Expr
 
 [<RequireQualifiedAccess>]
 type Level =
@@ -90,8 +91,6 @@ type Proof =
   | Qed of Tree<Tactic> list
   | Incomplete of Tree<Tactic> list
 
-type Demonstrandum = Demonstrandum of forall: (string list * TypeExpr option) list * Expr
-
 type LawKind =
   | Lemma
   | Theorem
@@ -113,7 +112,7 @@ type AST =
   | Inductive of newType: TypeExpr * baseType: TypeExpr * cases: TypeExpr list
   | Module
   | RequireImport of longIdent: string list
-  | Law of name: string * kind: LawKind * Demonstrandum * proof: Proof
+  | Law of name: string * kind: LawKind * Expr * proof: Proof
   | Notation of Notation
 
 // tokenize
@@ -320,7 +319,26 @@ let expression (operators: Map<string, Notation>) =
       return r
     }
 
-  exprRef.Value <- matchExpr <|> term
+  let forall =
+    let varDecl =
+      parse {
+        let! vars = many1 identifier
+        let! typeSpec = opt (token ":" >>. typeExpr)
+        return vars, typeSpec
+      }
+
+    let simpleDecl = varDecl |>> List.singleton
+    let varDecls = simpleDecl <|> many1 (betweenParens varDecl)
+
+    parse {
+      do! kw "forall"
+      let! decls = varDecls
+      do! token ","
+      let! e = expr
+      return Expr.Forall(decls, e)
+    }
+
+  exprRef.Value <- matchExpr <|> forall <|> term
 
   expr
 
@@ -444,24 +462,6 @@ let proof =
         | _, _ -> tacticsAsTree tactics |> Proof.Incomplete
   }
 
-let demonstrandum operators =
-  let varDecl =
-    parse {
-      let! vars = many1 identifier
-      let! typeSpec = opt (token ":" >>. typeExpr)
-      return vars, typeSpec
-    }
-
-  let varDecls = many1 (varDecl .>> token ",")
-
-  parse {
-    let! forall = opt (kw "forall" >>. varDecls)
-    let! e = expression operators
-    let forall = Option.defaultValue [] forall
-    do! token "."
-    return Demonstrandum(forall, e)
-  }
-
 let kwValue k v = kw k >>. preturn v
 
 let law operators =
@@ -474,7 +474,8 @@ let law operators =
 
     let! id = identifier
     do! token ":"
-    let! body = demonstrandum operators
+    let! body = expression operators
+    do! token "."
     let! proof = proof
     return Law(id, kind, body, proof)
   }
@@ -598,11 +599,6 @@ let notation operators =
 
 // TODO
 
-// Theorem
 // Module
 
 // integers
-
-// forall f: bool -> bool,
-//     (forall x, f x = x) ->
-//     forall b, f (f b) = b.
