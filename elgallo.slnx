@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="Formatter/Formatter.fsproj" />
+  <Project Path="Tool/Tool.fsproj" />
   <Project Path="Test/Test.fsproj" />
 </Solution>

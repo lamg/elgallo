@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Formatter\Formatter.fsproj" />
+    <ProjectReference Include="..\Tool\Tool.fsproj" />
   </ItemGroup>
 
 </Project>

@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-      <Compile Include="RocqParser.fs" />
+      <Compile Include="Parsers/Rocq.fs" />
       <Compile Include="Program.fs" />
   </ItemGroup>
 

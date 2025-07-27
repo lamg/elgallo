@@ -3,7 +3,7 @@
 open System
 open Xunit
 open FParsec
-open RocqParser
+open Parsers.Rocq
 
 
 let parseWith parser text =

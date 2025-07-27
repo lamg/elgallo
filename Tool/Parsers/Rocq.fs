@@ -1,4 +1,4 @@
-module RocqParser
+module Parsers.Rocq
 
 open FParsec
 
