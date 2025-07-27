@@ -118,54 +118,18 @@ type AST =
 
 // tokenize
 
-let comment = pstring "(*" >>. skipManyTill skipAnyChar (pstring "*)")
-let ws = skipMany (spaces1 <|> comment)
-let str s = pstring s .>> ws
-let token s = pstring s >>. ws
+let tokenizer =
+  Util.WithCommentBlock("(*", "*)", [ "match"; "end"; "with"; "as"; "eqn" ])
 
-let kw s =
-  pstring s .>> notFollowedBy letter >>. ws
+let comment: Parser<unit, unit> = tokenizer.commentBlock
 
-open System
-open System.Globalization
-
-let identifier: Parser<string, unit> =
-
-  let isIdStart c = Char.IsLetter c || c = '_'
-
-  let isIdChar (c: char) =
-    match CharUnicodeInfo.GetUnicodeCategory c with
-    | UnicodeCategory.UppercaseLetter
-    | UnicodeCategory.LowercaseLetter
-    | UnicodeCategory.TitlecaseLetter
-    | UnicodeCategory.ModifierLetter
-    | UnicodeCategory.OtherLetter
-    | UnicodeCategory.OtherNumber
-    | UnicodeCategory.DecimalDigitNumber
-    | UnicodeCategory.NonSpacingMark
-    | UnicodeCategory.SpacingCombiningMark -> true
-    | _ -> c = '_'
-
-  let keywords = set [ "match"; "end"; "with"; "as"; "eqn" ]
-
-  attempt (
-    parse {
-      let! i = many1Satisfy2L isIdStart isIdChar "identifier"
-      let! apostrophes = many (pchar '\'') |>> System.String.Concat
-      let id = i + apostrophes
-      do! ws
-
-      return!
-        if keywords.Contains id || id = "_" then
-          fail $"keyword {id} not a valid identifier"
-        else
-          preturn id
-    }
-  )
-
-let pint: Parser<int, unit> = pint32 .>> ws
-
-let betweenParens p = between (token "(") (token ")") p
+let identifier: Parser<string, unit> = tokenizer.identifier
+let token = tokenizer.token
+let betweenParens = tokenizer.betweenParens
+let kw = tokenizer.kw
+let ws = tokenizer.ws
+let str = tokenizer.str
+let pint = tokenizer.pint
 
 let typeParams expr =
   let idsColon =

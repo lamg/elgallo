@@ -6,7 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+      <Compile Include="Parsers/Util.fs" />
       <Compile Include="Parsers/Rocq.fs" />
+      <Compile Include="Parsers/Golang.fs" />
+      <Compile Include="Parsers/Rust.fs" />
       <Compile Include="Program.fs" />
   </ItemGroup>
 
