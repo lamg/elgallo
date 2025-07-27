@@ -6,10 +6,26 @@ open FParsec
 
 type Tokenizer =
   | WithCommentBlock of startToken: string * endToken: string * keywords: string list
+  | WithCommentLine of startCommentLine: string * Tokenizer
+
+  member this.startEndCommentBlock =
+    match this with
+    | WithCommentBlock(startToken, endToken, _) -> startToken, endToken
+    | WithCommentLine(_, t) -> t.startEndCommentBlock
+
+  member this.langKeywords =
+    match this with
+    | WithCommentBlock(_, _, keywords) -> Set keywords
+    | WithCommentLine(_, t) -> t.langKeywords
 
   member this.commentBlock =
-    let (WithCommentBlock(startToken, endToken, _)) = this
+    let startToken, endToken = this.startEndCommentBlock
     pstring startToken >>. skipManyTill skipAnyChar (pstring endToken)
+
+  member this.commentLine =
+    match this with
+    | WithCommentLine(startComment, _) -> pstring startComment >>. skipManyTill skipAnyChar newline
+    | _ -> preturn ()
 
   member this.ws = skipMany (spaces1 <|> this.commentBlock)
 
@@ -19,8 +35,6 @@ type Tokenizer =
     pstring s .>> notFollowedBy letter >>. this.ws
 
   member this.identifier: Parser<string, unit> =
-    let (WithCommentBlock(_, _, keywords)) = this
-    let keywords = Set keywords
     let isIdStart c = Char.IsLetter c || c = '_'
 
     let isIdChar (c: char) =
@@ -44,7 +58,7 @@ type Tokenizer =
         do! this.ws
 
         return!
-          if keywords.Contains id || id = "_" then
+          if this.langKeywords.Contains id || id = "_" then
             fail $"keyword {id} not a valid identifier"
           else
             preturn id
