@@ -111,10 +111,12 @@ type Function =
 type AST =
   | Function of Function
   | Inductive of newType: TypeExpr * baseType: TypeExpr * cases: TypeExpr list
-  | Module
+  | Module of identifier: string * toplevels: AST list
   | RequireImport of longIdent: string list
   | Law of name: string * kind: LawKind * Expr * proof: Proof
   | Notation of Notation
+  | Check of TypeExpr
+  | Compute of Expr
 
 // tokenize
 
@@ -557,14 +559,37 @@ let notation operators =
     let! e = betweenParens (expression operators)
     let! r = notationOptional (Notation.Basic(op, e))
     do! token "."
-    return r
+
+    return Notation r
   }
   <?> "notation"
 
+let rec topLevelDefinitions operators =
+  parse {
+    let! def =
+      law operators
+      <|> notation operators
+      <|> rocqFunction operators
+      <|> inductiveType
+      <|> rocqModule operators
 
+    match def with
+    | Notation n -> failwith "continue parsing with new operators"
+    | _ -> failwith "continue parsing"
+  }
+
+and rocqModule operators =
+  parse {
+    do! kw "Module"
+    let! id = identifier
+    do! token "."
+    let! topLevels = topLevelDefinitions operators
+    do! kw "End"
+    let! _ = str id
+    do! token "."
+    return Module(id, topLevels)
+  }
 
 // TODO
 
 // Module
-
-// integers
