@@ -299,7 +299,8 @@ let notation () =
     Notation.Associative(Notation.AtLevel(infixNotation "+" "add" "x" "y", 50), Direction.Left) ]
   |> List.iter (fun (text, expected) ->
     let actual = parseWith (notation Map.empty) text
-    Assert.Equal<Notation>(expected, actual))
+
+    Assert.Equal<AST>(Notation expected, actual))
 
 [<Fact>]
 let tactics () =
