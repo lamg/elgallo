@@ -2,19 +2,26 @@ module Parsers.Rocq
 
 open FParsec
 
-type TypeParams = TypeParams of names: list<string> * TypeExpr
+type TypeParams = TypeParams of names: Util.Identifier list * TypeExpr
 
 and [<RequireQualifiedAccess>] TypeExpr =
-  | Simple of string // O : nat
+  | Simple of Util.Identifier // O : nat
   | Func of TypeExpr * TypeExpr // nat -> nat
-  | SimpleParams of string * TypeParams list // T (n m : nat) (j k: nat)
+  | SimpleParams of Util.Identifier * TypeParams list // T (n m : nat) (j k: nat)
 
 [<RequireQualifiedAccess>]
 type OperatorKind =
-  | Infix of op: string * left: string * right: string // x + y
-  | Prefix of op: string * right: string // !x
-  | Postfix of op: string * left: string // x!
+  | Infix of op: string * left: Util.Identifier * right: Util.Identifier // x + y
+  | Prefix of op: string * right: Util.Identifier // !x
+  | Postfix of op: string * left: Util.Identifier // x!
   | Mixfix of OperatorKind list // Notation "'if' c 'then' t 'else' e" := (if c then t else e).
+
+  member this.OperatorString =
+    match this with
+    | Postfix(op, _)
+    | Prefix(op, _)
+    | Infix(op, _, _) -> op
+    | Mixfix xs -> xs |> List.map _.OperatorString |> String.concat "_"
 
 [<RequireQualifiedAccess>]
 type Direction =
@@ -27,25 +34,31 @@ type Notation =
   | AtLevel of Notation * atLevel: int
   | Associative of Notation * Direction
 
+  member this.NotationString =
+    match this with
+    | Basic(k, _) -> k.OperatorString
+    | AtLevel(n, _)
+    | Associative(n, _) -> n.NotationString
+
 and [<RequireQualifiedAccess>] Guard =
   | Guard of Pattern * Expr
   | Pattern of Pattern
 
 and [<RequireQualifiedAccess>] Pattern =
   | All
-  | Identifier of string
+  | Identifier of Util.Identifier
   | ConstructorWithParams of Pattern list
   | CommaSep of Pattern list
   | NestedAlt of Pattern list
 
 and [<RequireQualifiedAccess>] Expr =
   | Match of exprs: Expr list * guards: Guard list
-  | Identifier of string
+  | Identifier of Util.Identifier
   | Integer of int
   | Apply of f: Expr * x: Expr
   | Binary of operator: Notation * left: Expr * right: Expr
   | IfThenElse of cond: Expr * thenExpr: Expr * elseExpr: Expr
-  | Forall of (string list * TypeExpr option) list * expr: Expr
+  | Forall of (Util.Identifier list * TypeExpr option) list * expr: Expr
 
 [<RequireQualifiedAccess>]
 type Level =
@@ -56,15 +69,15 @@ type Level =
 
 type TacticArgument =
   | Direction of Direction
-  | DestructedVars of string list
-  | Patterns of string list list
-  | Eqn of string
+  | DestructedVars of Util.Identifier list
+  | Patterns of Util.Identifier list list
+  | Eqn of Util.Identifier
   | EmptyBrackets
 
 [<RequireQualifiedAccess>]
 type Tactic =
   | Level of Level * Tactic
-  | Tactic of identifier: string * args: TacticArgument list
+  | Tactic of identifier: Util.Identifier * args: TacticArgument list
 
   member this.TacticLevel =
     match this with
@@ -102,7 +115,7 @@ type FunctionType =
   | Fixpoint
 
 type Function =
-  { name: string
+  { name: Util.Identifier
     functionParams: TypeParams list
     resultType: TypeExpr option
     body: Expr
@@ -111,21 +124,21 @@ type Function =
 type AST =
   | Function of Function
   | Inductive of newType: TypeExpr * baseType: TypeExpr * cases: TypeExpr list
-  | Module of identifier: string * toplevels: AST list
-  | RequireImport of longIdent: string list
-  | Law of name: string * kind: LawKind * Expr * proof: Proof
+  | Module of identifier: Util.Identifier * toplevels: AST list
+  | RequireImport of Util.Identifier
+  | Law of name: Util.Identifier * kind: LawKind * Expr * proof: Proof
   | Notation of Notation
-  | Check of TypeExpr
+  | Check of Expr * TypeExpr
   | Compute of Expr
 
 // tokenize
 
 let tokenizer =
-  Util.WithCommentBlock("(*", "*)", [ "match"; "end"; "with"; "as"; "eqn" ])
+  Util.WithCommentBlock("(*", "*)", [ "match"; "end"; "with"; "as"; "eqn"; "End"; "Definition" ])
 
 let comment: Parser<unit, unit> = tokenizer.commentBlock
 
-let identifier: Parser<string, unit> = tokenizer.identifier
+let identifier: Parser<Util.Identifier, unit> = tokenizer.identifier
 let token = tokenizer.token
 let betweenParens = tokenizer.betweenParens
 let kw = tokenizer.kw
@@ -188,9 +201,9 @@ let requireImport =
   parse {
     do! kw "Require"
     do! kw "Import"
-    let! xs = sepEndBy1 identifier (pstring ".")
-    do! ws
-    return RequireImport xs
+    let! id = identifier
+    do! token "."
+    return RequireImport id
   }
 
 let identifierExpr = identifier |>> Expr.Identifier
@@ -334,7 +347,7 @@ let kwStatement s = kw s .>> token "."
 let innerTactic =
   // simpl.
   // rewrite <- a.
-  //  destruct n as [| n' ] eqn:E.
+  //  destruct n as [| n' ] eqn:E. TODO allow [x | y | z]
   //  destruct b eqn:E.
   let pattern = kw "as" >>. between (str "[|") (str "]") (many1 identifier)
   let eqn = kw "eqn" >>. token ":" >>. identifier |>> Eqn
@@ -417,16 +430,37 @@ let rec tacticsAsTree (tactics: Tactic list) =
       init @ [ Tree(last.Value, treeSegments) ]
 
 let proof =
+  let qed, admitted =
+    Util.Identifier.ShortId "Qed", Util.Identifier.ShortId "Admitted"
+
+  let proofEnd =
+    str $"{qed.Head}." |>> (fun _ -> Tactic.Tactic(qed, []))
+    <|> (str $"{admitted.Head}." |>> fun _ -> Tactic.Tactic(admitted, []))
+
+  let rec tactics () =
+    parse {
+      let! t = proofEnd <|> tactic
+
+      return!
+        match t with
+        | Tactic.Tactic(n, _) when n = qed || n = admitted -> preturn [ t ]
+        | _ ->
+          parse {
+            let! ts = tactics ()
+            return t :: ts
+          }
+    }
+
   parse {
     do! kwStatement "Proof"
-    let! tactics = many tactic
+    let! tactics = tactics ()
 
     return
       match tactics with
       | [] -> Proof.Incomplete []
       | _ ->
         match splitLast tactics with
-        | Tactic.Tactic("Qed", _), tacticsButLast -> tacticsButLast |> tacticsAsTree |> Proof.Qed
+        | Tactic.Tactic(n, _), tacticsButLast when n = qed -> tacticsButLast |> tacticsAsTree |> Proof.Qed
         | _, _ -> tacticsAsTree tactics |> Proof.Incomplete
   }
 
@@ -564,18 +598,53 @@ let notation operators =
   }
   <?> "notation"
 
-let rec topLevelDefinitions operators =
+let check operators =
   parse {
-    let! def =
+    do! kw "Check"
+    let! e = expression operators
+    do! token ":"
+    let! te = typeExpr
+    do! token "."
+    return AST.Check(e, te)
+  }
+
+let rec topLevelDefinitions (moduleId: Util.Identifier option) operators =
+  let moduleEnd =
+    match moduleId with
+    | Some mid ->
+      parse {
+        do! kw "End"
+        let! _ = str mid.Head
+        do! token "."
+        return None
+      }
+    | None -> eof |>> fun _ -> None
+
+  parse {
+    let def =
       law operators
       <|> notation operators
       <|> rocqFunction operators
       <|> inductiveType
       <|> rocqModule operators
+      <|> check operators
+      |>> Some
 
-    match def with
-    | Notation n -> failwith "continue parsing with new operators"
-    | _ -> failwith "continue parsing"
+    let! defOrEnd = def <|> moduleEnd
+
+    return!
+      match defOrEnd with
+      | Some(Notation n as d) ->
+        parse {
+          let! rs = topLevelDefinitions moduleId (Map.add n.NotationString n operators)
+          return d :: rs
+        }
+      | Some d ->
+        parse {
+          let! rs = topLevelDefinitions moduleId operators
+          return d :: rs
+        }
+      | None -> preturn []
   }
 
 and rocqModule operators =
@@ -583,13 +652,6 @@ and rocqModule operators =
     do! kw "Module"
     let! id = identifier
     do! token "."
-    let! topLevels = topLevelDefinitions operators
-    do! kw "End"
-    let! _ = str id
-    do! token "."
+    let! topLevels = topLevelDefinitions (Some id) operators
     return Module(id, topLevels)
   }
-
-// TODO
-
-// Module

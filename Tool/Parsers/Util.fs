@@ -4,6 +4,15 @@ open System
 open System.Globalization
 open FParsec
 
+type Identifier =
+  | ShortId of string
+  | LongId of string * Identifier
+
+  member this.Head =
+    match this with
+    | ShortId n -> n
+    | LongId(n, _) -> n
+
 type Tokenizer =
   | WithCommentBlock of startToken: string * endToken: string * keywords: string list
   | WithCommentLine of startCommentLine: string * Tokenizer
@@ -34,7 +43,7 @@ type Tokenizer =
   member this.kw s =
     pstring s .>> notFollowedBy letter >>. this.ws
 
-  member this.identifier: Parser<string, unit> =
+  member this.identifier: Parser<Identifier, unit> =
     let isIdStart c = Char.IsLetter c || c = '_'
 
     let isIdChar (c: char) =
@@ -50,12 +59,11 @@ type Tokenizer =
       | UnicodeCategory.SpacingCombiningMark -> true
       | _ -> c = '_'
 
-    attempt (
+    let shortId =
       parse {
         let! i = many1Satisfy2L isIdStart isIdChar "identifier"
         let! apostrophes = many (pchar '\'') |>> System.String.Concat
         let id = i + apostrophes
-        do! this.ws
 
         return!
           if this.langKeywords.Contains id || id = "_" then
@@ -63,7 +71,19 @@ type Tokenizer =
           else
             preturn id
       }
-    )
+
+    let longId = sepBy1 shortId (attempt (pchar '.' >>? lookAhead shortId))
+
+    parse {
+      let! id = longId
+      do! this.ws
+
+      return
+        match List.rev id with
+        | [] -> failwith "should have returned at least a short identifier"
+        | x :: xs -> xs |> List.fold (fun acc x -> Identifier.LongId(x, acc)) (ShortId x)
+    }
+    |> attempt
 
   member this.pint: Parser<int, unit> = pint32 .>> this.ws
   member this.token s = pstring s >>. this.ws
