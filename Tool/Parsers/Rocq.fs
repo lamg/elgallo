@@ -655,3 +655,8 @@ and rocqModule operators =
     let! topLevels = topLevelDefinitions (Some id) operators
     return Module(id, topLevels)
   }
+
+let parse (rocqFile: string) =
+  match runParserOnFile (rocqModule Map.empty) () rocqFile System.Text.Encoding.UTF8 with
+  | Success(p, _, _) -> Result.Ok p
+  | Failure(msg, state, _) -> Result.Error $"{msg} {state}"
